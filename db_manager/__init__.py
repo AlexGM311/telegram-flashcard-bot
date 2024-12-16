@@ -1,6 +1,5 @@
 from typing import Any
-
-from obj.flashcard import Flashcard
+from helper_classes import Flashcard
 
 def initialize_db() -> None:
     """
@@ -20,7 +19,7 @@ def add_flashcard(flashcard: Flashcard) -> int:
     raise RuntimeError("Not implemented yet")
 
 
-def get_flashcard(card_id: int) -> dict:
+def get_flashcard(card_id: int) -> Flashcard:
     """
     Возвращает флэшкарту по её ID.
 

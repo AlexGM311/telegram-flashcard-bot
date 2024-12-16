@@ -1,10 +1,13 @@
-from typing import Dict
+import logging
 
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import *
 from aiogram.types import Message, ReplyKeyboardRemove
+
+import db_manager
 from handlers import dp
+from helper_classes import Flashcard
 
 
 class AddFlashcard(StatesGroup):
@@ -51,9 +54,41 @@ async def process_category(message: Message, state: FSMContext) -> None:
 async def process_question(message: Message, state: FSMContext) -> None:
     data = await state.update_data(question=message.text)
     await message.answer(
-        f"Выбран вопрос: {message.text}" + ("" if data["title"] != "?" else "\nНазвание будет совпадать с вопросом.")
+        f"Выбран вопрос: {message.text}" + ("" if data["title"] != "?" else "\nНазвание будет совпадать с вопросом."),
+        reply_markup=ReplyKeyboardRemove()
+    )
+    if data["title"] == "?":
+        data = await state.update_data(title=message.text)
+    await state.set_state(AddFlashcard.answer)
+    await message.answer(
+        "Введите ответ на вопрос.",
+        reply_markup=ReplyKeyboardRemove()
     )
 
-async def add_to_db(message: Message, data: Dict[str, Any]):
-    try:
+@dp.message(AddFlashcard.answer)
+async def process_answer(message: Message, state: FSMContext):
+    data = await state.update_data(answer=message.text)
+    await message.answer(
+        f"Ответ на вопрос: {message.text}",
+        reply_markup=ReplyKeyboardRemove()
+    )
 
+    flashcard: Flashcard = Flashcard(
+        message.from_user.id,
+        data["title"],
+        data["category"],
+        data["question"],
+        data["answer"]
+    )
+    try:
+        flashcard_id = db_manager.add_flashcard(flashcard)
+        await message.answer(
+            f"Карта успешно создана. Её идентификатор - {flashcard_id}.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    except RuntimeError as e:
+        await message.answer(
+            "Что-то пошло не так! Карту не удалось создать.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        logging.error(str(e) + "; Couldn't save user flashcard: " + str(flashcard))
