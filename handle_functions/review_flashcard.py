@@ -94,12 +94,13 @@ async def review_flashcard_handler(message: Message, state: FSMContext):
         flashcard = cards[0]
         for card in cards:
             review = get_user_card_review(user, card)
-            if review is None:
+            if review is None or review.review_count == 0:
                 flashcard = card
                 break
-            if worst_ease == -1 or worst_ease < review.ease_factor:
+            if worst_ease == -1 or worst_ease > review.ease_factor:
                 flashcard = card
                 worst_ease = review.ease_factor
+        logging.info(worst_ease)
     else:
         flashcard = due_cards[0].flashcard
     await state.update_data(user=user, flashcard=flashcard, chat_id=message.chat.id,
@@ -164,7 +165,7 @@ async def difficulty_callback(query: CallbackQuery, callback_data: ReviewCallbac
 
     review = get_flashcard_user_review(data.get("user"), data.get("flashcard"))
     if review is None:
-        review = CardReview(flashcard_id=data.get("flashcard").id, user_id=data.get("user").id, ease_factor=callback_data.index)
+        review = CardReview(flashcard_id=data.get("flashcard").id, user_id=data.get("user").id, ease_factor=1)
         add(review)
 
     review.update_review(callback_data.index)

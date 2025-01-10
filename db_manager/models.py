@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy import ForeignKey, String, BigInteger, func, UUID, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from math import pi, cbrt
+
+pi_twentieth = 20/pi
 
 class Base(DeclarativeBase):
     pass
@@ -107,20 +111,25 @@ class CardReview(Base):
         if quality < 3:
             self.interval = 1
             self.review_count = 0
+            self.ease_factor = self.ease_factor ** 0.85
         else:
             self.review_count += 1
             if self.review_count == 1:
                 self.interval = 1
             elif self.review_count == 2:
-                self.interval = 6
+                self.interval = 2
             else:
-                self.interval = int(self.interval * self.ease_factor)
-
+                self.interval = min(int(self.interval * self.ease_factor), 7)  # Up to a week
         if not self.ease_factor:
-            self.ease_factor = quality
+            self.ease_factor = 1
         else:
-            self.ease_factor += (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
-            self.ease_factor = max(self.ease_factor, 1.3)
+            from math import atan, tan, pi
+            n = self.ease_factor
+            arc = n / pi_twentieth
+            angle = tan(arc) * 5
+            angle += 1
+            n = pi_twentieth * atan(angle / 5)
+            self.ease_factor = n
 
-        self.last_reviewed = datetime.now()
-        self.next_review = self.last_reviewed + timedelta(hours=self.interval)
+        self.next_review = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        self.next_review += timedelta(days=self.interval)
