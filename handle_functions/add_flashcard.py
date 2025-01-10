@@ -6,9 +6,10 @@ from aiogram.fsm.state import *
 from aiogram.methods import edit_message_text
 from aiogram.types import Message, ReplyKeyboardRemove
 
-import db_manager
+from sqlalchemy.exc import NoResultFound
+from db_manager.main import *
+from db_manager.models import *
 from handlers import dp
-from helper_classes import Flashcard, error_types, User
 
 
 class AddFlashcard(StatesGroup):
@@ -20,23 +21,28 @@ class AddFlashcard(StatesGroup):
 @dp.message(Command("add_flashcard"))
 async def add_flashcard_handler(message: Message, state: FSMContext) -> None:
     await state.set_state(AddFlashcard.title)
-    flashcard: Flashcard = Flashcard()
-    flashcard.user_id = message.from_user.id
+    try:
+        user = get_user(message.from_user.id)
+    except NoResultFound:
+        user = User(id=message.from_user.id, chat_id=message.chat.id)
+        add(user)
+    flashcard: Flashcard = Flashcard(user=user)
     text = f"Флеш-карта на данный момент: \n{flashcard.format()}\n"
     msg: Message = await message.answer(
         text + "Выберите заголовок для карточки. Введите точку, если хотите, чтобы название совпадало с вопросом на карточке."
     )
     await state.update_data(
-        user=User(user_telegram_id=message.from_user.id, chat_id=message.chat.id),
+        user=user,
         message_id=msg.message_id,
         bot=msg.bot,
-        flashcard=flashcard
+        flashcard=flashcard,
+        from_menu = False
     )
 
 @dp.message(AddFlashcard.title)
 async def process_title(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
-    flashcard: Flashcard = data["flashcard"]
+    flashcard: Flashcard = data.get("flashcard")
     flashcard.title = "-" if message.text == "." else message.text
     text = f"Флеш-карта на данный момент: \n{flashcard.format()}\n"
     user: User = data["user"]
@@ -52,8 +58,16 @@ async def process_title(message: Message, state: FSMContext) -> None:
 @dp.message(AddFlashcard.category)
 async def process_category(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
-    flashcard: Flashcard = data["flashcard"]
-    flashcard.category = "Без категории" if message.text == "." else message.text
+    flashcard: Flashcard = data.get("flashcard")
+    user: User = data.get("user")
+    category_name = "Без категории" if message.text == "." else message.text
+    categories = get_categories(user_id=user.id, name=category_name)
+    if len(categories) == 0:
+        category = Category(name=category_name, user_id=user.id)
+    else:
+        category = categories[0]
+    flashcard.category = category
+    flashcard.category_id = category.id
     text = f"Флеш-карта на данный момент: \n{flashcard.format()}\n"
     user: User = data["user"]
     await edit_message_text.EditMessageText(
@@ -95,25 +109,21 @@ async def process_answer(message: Message, state: FSMContext):
         chat_id=user.chat_id
     ).as_(data["bot"])
     try:
-        flashcard_id = db_manager.add_flashcard(flashcard)
+        if len(user.flashcards) != 0:
+            if user.flashcards[-1].local_id:
+                flashcard.local_id = user.flashcards[-1].local_id + 1
+            else:
+                flashcard.local_id = len(user.flashcards)
+        else:
+            flashcard.local_id = 1
+        add(flashcard)
         await message.answer(
-            f"Карта успешно создана. Её идентификатор - {flashcard_id}.",
+            f"Карта успешно создана. Её идентификатор - {flashcard.local_id}.",
             reply_markup=ReplyKeyboardRemove()
         )
-    except error_types.MissingEntryError:
-        user: User = data["user"]
-        db_manager.add_user(user.telegram_id, user.chat_id)
-        flashcard_id = db_manager.add_flashcard(flashcard)
-        await message.answer(
-            f"Карта успешно создана. Её идентификатор - {flashcard_id}.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-    except error_types.DatabaseError as e:
-        await message.answer(
-            "Что-то пошло не так! Карту не удалось создать.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        logging.error(str(e) + "; Couldn't save user flashcard: " + str(flashcard))
+    except Exception as e:
+        await message.answer("Что-то пошло не так!")
+        logging.error(e)
 
     await state.clear()
     await message.delete()

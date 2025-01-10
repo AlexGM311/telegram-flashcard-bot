@@ -1,67 +1,185 @@
 import logging
 
-import jellyfish
+from aiogram import F
 from aiogram.filters import Command
+from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import *
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.methods import SendChatAction, edit_message_media, delete_message
+from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, BufferedInputFile, \
+    InputMediaPhoto
+from sqlalchemy.exc import NoResultFound
 
-import db_manager
-import helper_classes.error_types
 from handle_functions.dp import dp
-from helper_classes import Flashcard
+from db_manager.main import *
+from db_manager.models import *
 
 
-class ReviewFlashcard(StatesGroup):
-    id = State()
-    reviewing = State()
+def create_image_with_wrapped_text(text, width=800, height=400, font_size=40, padding=20):
+    from PIL import Image, ImageDraw, ImageFont
 
-@dp.message(Command("review_flashcard"))
-async def review_flashcard_handler(message: Message, state: FSMContext):
-    await state.set_state(ReviewFlashcard.id)
-    await message.answer(
-        "Введите идентификатор повторяемой карточки",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
 
-@dp.message(ReviewFlashcard.id)
-async def select_flashcard(message: Message, state: FSMContext):
     try:
-        card_id: int = int(message.text)
-        flashcard: Flashcard = db_manager.get_flashcard(card_id)
-        await state.set_state(ReviewFlashcard.reviewing)
-        await state.update_data(flashcard=flashcard)
-        await message.answer(
-            "Введите ответ на вопрос: \n" + flashcard.question)
-    except ValueError as e:
-        logging.error(f"Failed to cast into int: {e}")
-        await message.answer(
-            "Некорректный формат ввода числа. Попробуйте снова.")
-    except helper_classes.error_types.MissingEntryError as e:
-        await state.clear()
-        logging.error(f"Failed to retrieve flashcard from db: {e}, ")
-        await message.answer(f"Карты с таким номером не существует.")
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except IOError:
+        font = ImageFont.load_default()
 
-@dp.message(ReviewFlashcard.reviewing)
-async def handle_answer(message: Message, state: FSMContext):
-    data = await state.get_data()
-    answer = message.text
-    card: Flashcard = data["flashcard"]
-    correct = card.answer
-    dist = jellyfish.damerau_levenshtein_distance(answer, correct)
-    if dist == 0:
-        await message.answer(
-            "Правильно!"
-        )
-        db_manager.record_answer(card.card_id, card.user_id, True)
-    elif dist <= 2:
-        await message.answer(
-            "Почти! Правильный ответ: " + correct
-        )
-        db_manager.record_answer(card.card_id, card.user_id, True)
+    def wrap_text(text, font, max_width):
+        words = text.split()
+        lines = []
+        current_line = words[0]
+
+        for word in words[1:]:
+            test_line = f"{current_line} {word}"
+            if draw.textlength(test_line, font=font) <= max_width:
+                current_line = test_line
+            else:
+                lines.append(current_line)
+                current_line = word
+
+        lines.append(current_line)
+        return lines
+
+    text_width = width - 2 * padding
+    lines = wrap_text(text, font, text_width)
+
+    box = font.getbbox('A')
+    line_height = (box[3] - box[1]) * 1.1
+    text_block_height = line_height * len(lines)
+
+    y = (height - text_block_height) // 2
+
+    for line in lines:
+        line_width = draw.textlength(line, font=font)
+        x = (width - line_width) // 2
+        draw.text((x, y), line, font=font, fill="black")
+        y += line_height
+
+    return image
+
+
+class ReviewCallback(CallbackData, prefix="Review"):
+    index: int
+    function: str
+
+class ReviewFlashcard:
+    button_row: list[list[InlineKeyboardButton]] = [[
+        InlineKeyboardButton(text="Правильно", callback_data=ReviewCallback(index=5, function="difficulty").pack()),
+        InlineKeyboardButton(text="Почти правильно",
+                             callback_data=ReviewCallback(index=4, function="difficulty").pack()),
+        InlineKeyboardButton(text="Не правильно", callback_data=ReviewCallback(index=2, function="difficulty").pack()),
+    ]]
+    flip = InlineKeyboardButton(text="Просмотреть правильный ответ",
+                                callback_data=ReviewCallback(index=0, function="flip").pack())
+
+
+@dp.message(Command("review"))
+async def review_flashcard_handler(message: Message, state: FSMContext):
+    user: User | None = None
+    try:
+        user = get_user(message.from_user.id)
+    except NoResultFound:
+        await message.answer("Вы ещё не создавали флеш-карт!")
+        return
+
+    due_cards = get_user_due_reviews(user)
+    if len(due_cards) == 0:
+        cards = list(user.flashcards) + [f.flashcard for f in user.shared_flashcards]
+        if len(cards) == 0:
+            await message.answer("У вас нет флеш-карт для повторения!")
+            return
+        worst_ease = -1
+
+        flashcard = cards[0]
+        for card in cards:
+            review = get_user_card_review(user, card)
+            if review is None:
+                flashcard = card
+                break
+            if worst_ease == -1 or worst_ease < review.ease_factor:
+                flashcard = card
+                worst_ease = review.ease_factor
     else:
-        await message.answer(
-            "Неверно! Правильный ответ: " + correct
-        )
-        db_manager.record_answer(card.card_id, card.user_id, False)
-    await state.clear()
+        flashcard = due_cards[0]
+    await state.update_data(user=user, flashcard=flashcard, chat_id=message.chat.id,
+                            bot=message.bot, from_menu=False)
+
+    await display_question(message, state)
+
+
+async def display_question(message: Message, state: FSMContext, edit_message: bool = False):
+    import io
+    data = await state.get_data()
+    await SendChatAction(action="upload_photo", chat_id=data.get("chat_id")).as_(data.get("bot"))
+    image = create_image_with_wrapped_text(data.get("flashcard").question)
+    byte_arr = io.BytesIO()
+    image.save(byte_arr, format='PNG')
+    byte_arr.seek(0)
+
+    if not edit_message:
+        msg: Message = await data.get("bot").send_photo(data.get("chat_id"), BufferedInputFile(byte_arr.read(), "question.png"),
+                                                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[ReviewFlashcard.flip]]))
+        await state.update_data(message_id=msg.message_id)
+    else:
+        msg = message
+        await message.edit_media(media=InputMediaPhoto(media=BufferedInputFile(byte_arr.read(), "question.png")),
+                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[ReviewFlashcard.flip]]))
+    await state.update_data(message_id=msg.message_id)
+
+@dp.callback_query(ReviewCallback.filter(F.function == "flip"))
+async def flip_card(query: CallbackQuery, callback_data: ReviewCallback, state: FSMContext):
+    st = await state.get_state()
+    data = await state.get_data()
+
+    if not data.get("flashcard"):
+        await query.answer("Это сообщение старое и больше не работает.")
+        await query.message.delete()
+        return
+
+    import io
+
+    await SendChatAction(action="upload_photo", chat_id=data.get("chat_id")).as_(data.get("bot"))
+    image = create_image_with_wrapped_text(data.get("flashcard").answer)
+    byte_arr = io.BytesIO()
+    image.save(byte_arr, format='PNG')
+    byte_arr.seek(0)
+
+    await edit_message_media.EditMessageMedia(
+        media=InputMediaPhoto(media=BufferedInputFile(byte_arr.read(), "question.png")),
+        message_id=data.get("message_id"),
+        chat_id=data.get("chat_id"),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=ReviewFlashcard.button_row)
+    ).as_(data.get("bot"))
+
+@dp.callback_query(ReviewCallback.filter(F.function == "difficulty"))
+async def difficulty_callback(query: CallbackQuery, callback_data: ReviewCallback, state: FSMContext):
+    st = await state.get_state()
+    data = await state.get_data()
+
+    if not data.get("flashcard"):
+        await query.answer("Это сообщение старое и больше не работает.")
+        await query.message.delete()
+        return
+
+    review = get_flashcard_user_review(data.get("user"), data.get("flashcard"))
+    if review is None:
+        review = CardReview(flashcard_id=data.get("flashcard").id, user_id=data.get("user").id, ease_factor=callback_data.index)
+        add(review)
+
+    review.update_review(callback_data.index)
+    update()
+    if data.get("from_menu", False):
+        from handle_functions.manage_flashcards import ManageState, reset_menu
+        await state.set_state(ManageState.general)
+        await reset_menu(query.message, state)
+        await delete_message.DeleteMessage(
+            chat_id=data.get("chat_id"),
+            message_id=data.get("message_id")
+        ).as_(data.get("bot"))
+    else:
+        await delete_message.DeleteMessage(
+            chat_id=data.get("chat_id"),
+            message_id=data.get("message_id")
+        ).as_(data.get("bot"))
+        await state.clear()

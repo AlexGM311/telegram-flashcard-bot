@@ -1,5 +1,6 @@
 import logging
 
+import aiogram.exceptions
 from aiogram import F
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
@@ -8,9 +9,12 @@ from aiogram.fsm.state import *
 from aiogram.methods import edit_message_text
 from aiogram.types import Message, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-import db_manager
+from db_manager.main import *
 from handle_functions.dp import dp
-from helper_classes import Flashcard
+
+from sqlalchemy.exc import NoResultFound
+
+from handle_functions.manage_flashcards import ManageState
 
 
 class EditCardCallback(CallbackData, prefix="EditFlashcard"):
@@ -39,21 +43,17 @@ class EditFlashcard(StatesGroup):
             ]
     ])
 
-@dp.message(Command("edit_flashcard"))
-async def edit_flashcard_handler(message: Message, state: FSMContext):
-    await state.set_state(EditFlashcard.id)
-    await message.answer(
-        "Введите идентификатор изменяемой карточки",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
 @dp.message(EditFlashcard.id)
 async def select_flashcard(message: Message, state: FSMContext):
     try:
+        data = await state.get_data()
+        user = data.get("user")
         card_id: int = int(message.text)
-        user = db_manager.get_user_telegram_id(message.from_user.id)
-        logging.info(str(user) + str(card_id))
-        flashcard: Flashcard = db_manager.get_flashcard_local_user(card_id, user['id'])
+        flashcard = get_flashcard_local_user(card_id, user)
+        if flashcard is None:
+            await message.answer("Такой карты не существует!")
+            await state.clear()
+            return
         await state.set_state(EditFlashcard.editing)
         await state.update_data(flashcard=flashcard)
         await message.answer(
@@ -71,7 +71,7 @@ async def select_flashcard(message: Message, state: FSMContext):
         await message.answer(f"Что-то пошло не так! Не удалось получить флеш-карту для изменения.")
 
 @dp.callback_query(EditCardCallback.filter(F.state == "edit"))
-async def edit_title(query: CallbackQuery, callback_data: EditCardCallback, state: FSMContext):
+async def edit_menu(query: CallbackQuery, callback_data: EditCardCallback, state: FSMContext):
     data = await state.get_data()
     if 'flashcard' in data:
         flashcard: Flashcard = data["flashcard"]
@@ -79,6 +79,7 @@ async def edit_title(query: CallbackQuery, callback_data: EditCardCallback, stat
         await query.answer("Это сообщение старое и больше не работает.")
         await query.message.delete()
         return
+
     edit_text = ""
     match callback_data.mode:
         case "title":
@@ -109,11 +110,20 @@ async def edit_title(query: CallbackQuery, callback_data: EditCardCallback, stat
             await query.answer("Завершение изменения")
             await query.message.edit_text("Сохранение изменений", reply_markup=InlineKeyboardMarkup(inline_keyboard=[]))
             try:
-                db_manager.update_flashcard(data["flashcard"])
+                update()
                 await query.message.edit_text("Карта успешно сохранена")
-            except RuntimeError as e:
+            except Exception as e:
                 logging.error(f"Couldn't save flashcard: {e}")
-            await state.clear()
+
+            if data.get("from_menu", False):
+                from handle_functions.manage_flashcards import select_card_callback
+                await state.set_state(ManageState.card_menu)
+                await select_card_callback(query, data.get("callback_data"), state)
+            else:
+                await state.clear()
+        case _:
+            await query.answer("Выберите, что изменить")
+            edit_text += "Выберите какой параметр карты изменить"
 
     if edit_text != "":
         if query.message.text == flashcard.format() + "\n" + edit_text:
@@ -130,54 +140,89 @@ async def edit_title(query: CallbackQuery, callback_data: EditCardCallback, stat
 async def edit_parameter(message: Message, state: FSMContext):
     await message.delete()
     data = await state.get_data()
-    card: Flashcard = data["flashcard"]
-    card.title = message.text
-    await state.update_data(flashcard=card)
-    await edit_message_text.EditMessageText(
-        text=card.format() + "\n" + data["extra_text"],
-        chat_id=data["chat_id"],
-        message_id=data["message_id"],
-        reply_markup=EditFlashcard.markup
-    ).as_(data["bot"])
+    flashcard: Flashcard = data["flashcard"]
+    flashcard.title = message.text
+    await state.update_data(flashcard=flashcard)
+    try:
+        await edit_message_text.EditMessageText(
+            text=flashcard.format() + "\n" + data["extra_text"],
+            chat_id=data["chat_id"],
+            message_id=data["message_id"],
+            reply_markup=EditFlashcard.markup
+        ).as_(data["bot"])
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            return
+        await message.answer("Что-то пошло не так! Не удалось изменить параметр")
+        logging.error(e)
 
 @dp.message(EditFlashcard.category)
 async def edit_parameter(message: Message, state: FSMContext):
     await message.delete()
     data = await state.get_data()
-    card: Flashcard = data["flashcard"]
-    card.category = message.text
-    await state.update_data(flashcard=card)
-    await edit_message_text.EditMessageText(
-        text=card.format() + "\n" + data["extra_text"],
-        chat_id=data["chat_id"],
-        message_id=data["message_id"],
-        reply_markup=EditFlashcard.markup
-    ).as_(data["bot"])
+    flashcard: Flashcard = data["flashcard"]
+    category_name = "Без категории" if message.text == "." else message.text
+    categories = get_categories(user_id=flashcard.user_id)
+    category = None
+    for c in categories:
+        if c.name == category_name:
+            category = c
+            break
+    if category is None:
+        category = Category(name=category_name, user=flashcard.user, user_id=flashcard.user_id)
+        add(category)
+    flashcard.category = category
+    flashcard.category_id = category.id
+    await state.update_data(flashcard=flashcard)
+    try:
+        await edit_message_text.EditMessageText(
+            text=flashcard.format() + "\n" + data["extra_text"],
+            chat_id=data["chat_id"],
+            message_id=data["message_id"],
+            reply_markup=EditFlashcard.markup
+        ).as_(data["bot"])
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            return
+        await message.answer("Что-то пошло не так! Не удалось изменить параметр")
+        logging.error(e)
 
 @dp.message(EditFlashcard.question)
 async def edit_parameter(message: Message, state: FSMContext):
     await message.delete()
     data = await state.get_data()
-    card: Flashcard = data["flashcard"]
-    card.question = message.text
-    await state.update_data(flashcard=card)
-    await edit_message_text.EditMessageText(
-        text=card.format() + "\n" + data["extra_text"],
-        chat_id=data["chat_id"],
-        message_id=data["message_id"],
-        reply_markup=EditFlashcard.markup
-    ).as_(data["bot"])
+    flashcard: Flashcard = data["flashcard"]
+    flashcard.question = message.text
+    await state.update_data(flashcard=flashcard)
+    try:
+        await edit_message_text.EditMessageText(
+            text=flashcard.format() + "\n" + data["extra_text"],
+            chat_id=data["chat_id"],
+            message_id=data["message_id"],
+            reply_markup=EditFlashcard.markup
+        ).as_(data["bot"])
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            return
+        await message.answer("Что-то пошло не так! Не удалось изменить параметр")
+        logging.error(e)
 
 @dp.message(EditFlashcard.answer)
 async def edit_parameter(message: Message, state: FSMContext):
     await message.delete()
     data = await state.get_data()
-    card: Flashcard = data["flashcard"]
-    card.answer = message.text
-    await state.update_data(flashcard=card)
-    await edit_message_text.EditMessageText(
-        text=card.format() + "\n" + data["extra_text"],
-        chat_id=data["chat_id"],
-        message_id=data["message_id"],
-        reply_markup=EditFlashcard.markup
-    ).as_(data["bot"])
+    flashcard: Flashcard = data["flashcard"]
+    flashcard.answer = message.text
+    await state.update_data(flashcard=flashcard)
+    try:
+        await edit_message_text.EditMessageText(
+            text=flashcard.format() + "\n" + data["extra_text"],
+            chat_id=data["chat_id"],
+            message_id=data["message_id"],
+            reply_markup=EditFlashcard.markup
+        ).as_(data["bot"])
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            return
+        await message.answer("Что-то пошло не так! Не удалось изменить параметр")
+        logging.error(e)
