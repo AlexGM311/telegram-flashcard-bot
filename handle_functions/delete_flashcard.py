@@ -53,6 +53,9 @@ async def delete_flashcard(query: CallbackQuery, callback_data: DeleteCardCallba
     else:
         try:
             shared_card = get_connection(user.id, flashcard.id)
+            review = get_user_card_review(user, shared_card.flashcard)
+            if review is not None:
+                delete(review)
             delete(shared_card)
             await query.answer("Карта успешно удалена")
             await query.message.edit_text("Карта успешно удалена.")

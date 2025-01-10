@@ -101,7 +101,7 @@ async def review_flashcard_handler(message: Message, state: FSMContext):
                 flashcard = card
                 worst_ease = review.ease_factor
     else:
-        flashcard = due_cards[0]
+        flashcard = due_cards[0].flashcard
     await state.update_data(user=user, flashcard=flashcard, chat_id=message.chat.id,
                             bot=message.bot, from_menu=False)
 
