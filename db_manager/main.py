@@ -14,7 +14,7 @@ def init():
     global session
     # Создать подключение к PostgreSQL
     # noinspection PyPep8Naming
-    DATABASE_URL = f"postgresql://{os.getenv("POSTGRE_LOGIN")}:{os.getenv("POSTGRE_PASSWORD")}@{os.getenv("SERVER_ADRESS")}:{os.getenv("SERVER_PORT")}/{os.getenv("DB_NAME")}"
+    DATABASE_URL = f'postgresql://{os.getenv("POSTGRE_LOGIN")}:{os.getenv("POSTGRE_PASSWORD")}@{os.getenv("SERVER_ADRESS")}:{os.getenv("SERVER_PORT")}/{os.getenv("DB_NAME")}'
     engine = create_engine(DATABASE_URL)
 
     # Создать таблицы в базе данных
