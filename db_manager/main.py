@@ -7,10 +7,14 @@ from db_manager.models import *
 session: Session | None = None
 
 def init():
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+
     global session
     # Создать подключение к PostgreSQL
     # noinspection PyPep8Naming
-    DATABASE_URL = "postgresql://postgres:password@localhost:5432/fcbot"
+    DATABASE_URL = f"postgresql://{os.getenv("POSTGRE_LOGIN")}:{os.getenv("POSTGRE_PASSWORD")}@{os.getenv("SERVER_ADRESS")}:{os.getenv("SERVER_PORT")}/{os.getenv("DB_NAME")}"
     engine = create_engine(DATABASE_URL)
 
     # Создать таблицы в базе данных

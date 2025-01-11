@@ -8,6 +8,7 @@ from aiogram.methods import SendChatAction, edit_message_media, delete_message
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, BufferedInputFile, \
     InputMediaPhoto
 from sqlalchemy.exc import NoResultFound
+from PIL import Image, ImageDraw, ImageFont
 
 from handle_functions.dp import dp
 from db_manager.main import *
@@ -15,7 +16,6 @@ from db_manager.models import *
 
 
 def create_image_with_wrapped_text(text, width=800, height=400, font_size=40, padding=20):
-    from PIL import Image, ImageDraw, ImageFont
 
     image = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(image)

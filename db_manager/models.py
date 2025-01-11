@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy import ForeignKey, String, BigInteger, func, UUID, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from math import pi, cbrt
+from math import pi
 
 pi_twentieth = 20/pi
 
