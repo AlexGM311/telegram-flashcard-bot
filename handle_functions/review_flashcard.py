@@ -8,21 +8,25 @@ from aiogram.methods import SendChatAction, edit_message_media, delete_message
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, BufferedInputFile, \
     InputMediaPhoto
 from sqlalchemy.exc import NoResultFound
-from PIL import Image, ImageDraw, ImageFont
 
 from handle_functions.dp import dp
 from db_manager.main import *
 from db_manager.models import *
 
 
-def create_image_with_wrapped_text(text, width=800, height=400, font_size=40, padding=20):
+from PIL import Image, ImageDraw, ImageFont
+from fontTools.ttLib import TTFont
+
+def create_image_with_wrapped_text(text, font_name: str, width=800, height=400, font_size=40, padding=20):
 
     image = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(image)
 
     try:
-        font = ImageFont.truetype("arial.ttf", font_size)
+        font = ImageFont.truetype(font_name, font_size)
+        print("Succesfully loaded the font")
     except IOError:
+        print("Couldn't load font")
         font = ImageFont.load_default()
 
     def wrap_text(text, font, max_width):
@@ -37,7 +41,6 @@ def create_image_with_wrapped_text(text, width=800, height=400, font_size=40, pa
             else:
                 lines.append(current_line)
                 current_line = word
-
         lines.append(current_line)
         return lines
 
@@ -57,6 +60,29 @@ def create_image_with_wrapped_text(text, width=800, height=400, font_size=40, pa
         y += line_height
 
     return image
+
+def has_glyph(font: TTFont, glyph):
+    for table in font['cmap'].tables:
+        if ord(glyph) in table.cmap.keys():
+            return True
+    return False
+
+def remove_control_characters(s):
+    import unicodedata
+    return "".join(ch for ch in s if unicodedata.category(ch)[0] != "C")
+
+def determine_font(text):
+    text = remove_control_characters(text)
+    font_options = [
+        'fonts/arial.ttf',
+        'fonts/BIZ-UDGothicR.ttc',
+        'fonts/msmincho.ttc',
+    ]
+    for font_name in font_options:
+        font = TTFont(font_name, fontNumber=1)
+        if all(has_glyph(font, c) for c in text):
+            return font_name
+    raise Exception(f'No suitable font for {text}.')
 
 
 class ReviewCallback(CallbackData, prefix="Review"):
@@ -113,7 +139,7 @@ async def display_question(message: Message, state: FSMContext, edit_message: bo
     import io
     data = await state.get_data()
     await SendChatAction(action="upload_photo", chat_id=data.get("chat_id")).as_(data.get("bot"))
-    image = create_image_with_wrapped_text(data.get("flashcard").question)
+    image = create_image_with_wrapped_text(data.get("flashcard").question, determine_font(data.get("flashcard").question))
     byte_arr = io.BytesIO()
     image.save(byte_arr, format='PNG')
     byte_arr.seek(0)
@@ -141,7 +167,7 @@ async def flip_card(query: CallbackQuery, callback_data: ReviewCallback, state: 
     import io
 
     await SendChatAction(action="upload_photo", chat_id=data.get("chat_id")).as_(data.get("bot"))
-    image = create_image_with_wrapped_text(data.get("flashcard").answer)
+    image = create_image_with_wrapped_text(data.get("flashcard").answer, determine_font(data.get("flashcard").answer))
     byte_arr = io.BytesIO()
     image.save(byte_arr, format='PNG')
     byte_arr.seek(0)
