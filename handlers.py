@@ -62,4 +62,4 @@ async def cancel_handler(message: Message, state: FSMContext) -> None:
 
 
 # noinspection PyUnresolvedReferences
-from handle_functions import add_flashcard, edit_flashcard, delete_flashcard, review_flashcard, manage_flashcards
+from handle_functions import add_flashcard, edit_flashcard, delete_flashcard, review_flashcard, manage_flashcards, toggle_notifications

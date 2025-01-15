@@ -14,6 +14,8 @@ async def check_reviews(bot: Bot, minutes: int):
             for review in get_all_due():
                 users.add(review.user)
             for user in users:
+                if not user.notify:
+                    continue
                 await bot.send_message(
                     chat_id=user.chat_id,
                     text="У вас есть карты, которые можно проверить! Введите команду /review чтобы проверить себя.",

@@ -1,5 +1,4 @@
 from typing import Type
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from db_manager.models import *
@@ -18,11 +17,21 @@ def init():
     engine = create_engine(DATABASE_URL)
 
     # Создать таблицы в базе данных
-    Base.metadata.create_all(engine)
+    BaseTable.metadata.create_all(engine)
+
+    # Добавить столбец notify в БД
+    with engine.connect() as connection:
+        got = set()
+        for row in connection.execute(text(f"SELECT column_name FROM information_schema.columns where table_name='Users'")):
+            got.add(row[0])
+        if 'notify' not in got:
+            connection.execute(text('ALTER TABLE public."Users" ADD COLUMN "notify" BOOLEAN DEFAULT TRUE;'))
+        connection.commit()
 
     # Создание сессии
     s = sessionmaker(engine)
     session = s()
+
 
 def get_user(telegram_id: int) -> User | None:
     """

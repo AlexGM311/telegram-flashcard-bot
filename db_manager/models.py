@@ -8,14 +8,15 @@ from math import pi
 
 pi_twentieth = 20/pi
 
-class Base(DeclarativeBase):
+class BaseTable(DeclarativeBase):
     pass
 
-class User(Base):
+class User(BaseTable):
     __tablename__ = 'Users'
 
     id = mapped_column(BigInteger, primary_key=True)
     chat_id = mapped_column(BigInteger)
+    notify: Mapped[bool] = mapped_column(default=True)
 
     categories: Mapped[list[Category]] = relationship("Category", back_populates="user", cascade="all, delete-orphan")
     flashcards: Mapped[list[Flashcard]] = relationship("Flashcard", back_populates="user", order_by="Flashcard.local_id", cascade="all, delete-orphan")
@@ -26,7 +27,7 @@ class User(Base):
         return f"User(id={self.id!r}, chat_id={self.chat_id!r})"
 
 
-class Category(Base):
+class Category(BaseTable):
     __tablename__ = 'Categories'
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -39,7 +40,7 @@ class Category(Base):
     def __repr__(self):
         return f"Category(id={self.id!r}, name={self.name!r}, user_id={self.user_id!r})"
 
-class Flashcard(Base):
+class Flashcard(BaseTable):
     __tablename__ = 'Flashcards'
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -81,7 +82,7 @@ class Flashcard(Base):
     Question: {self.question},
     Answer: {self.answer}"""
 
-class FlashcardUser(Base):
+class FlashcardUser(BaseTable):
     __tablename__ = 'FlashcardUser'
 
     flashcard_id: Mapped[int] = mapped_column(ForeignKey(Flashcard.id, ondelete='CASCADE'), primary_key=True)
@@ -90,7 +91,7 @@ class FlashcardUser(Base):
     flashcard = relationship("Flashcard", back_populates="shared_users")
     user = relationship("User", back_populates="shared_flashcards")
 
-class CardReview(Base):
+class CardReview(BaseTable):
     __tablename__ = 'CardReview'
 
     flashcard_id: Mapped[int] = mapped_column(ForeignKey(Flashcard.id, ondelete='CASCADE'), primary_key=True)
