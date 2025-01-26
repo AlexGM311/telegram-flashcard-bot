@@ -9,7 +9,7 @@ from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, C
     InputMediaPhoto
 from sqlalchemy.exc import NoResultFound
 
-from handle_functions.dp import dp
+from handle_functions.dp import dp, safe_callback_handler
 from db_manager.main import *
 from db_manager.models import *
 
@@ -17,6 +17,7 @@ from db_manager.models import *
 from PIL import Image, ImageDraw, ImageFont
 from fontTools.ttLib import TTFont
 
+@safe_callback_handler
 def create_image_with_wrapped_text(text, font_name: str, width=800, height=400, font_size=40, padding=20):
 
     image = Image.new("RGB", (width, height), "white")
@@ -61,16 +62,19 @@ def create_image_with_wrapped_text(text, font_name: str, width=800, height=400, 
 
     return image
 
+@safe_callback_handler
 def has_glyph(font: TTFont, glyph):
     for table in font['cmap'].tables:
         if ord(glyph) in table.cmap.keys():
             return True
     return False
 
+@safe_callback_handler
 def remove_control_characters(s):
     import unicodedata
     return "".join(ch for ch in s if unicodedata.category(ch)[0] != "C")
 
+@safe_callback_handler
 def determine_font(text):
     text = remove_control_characters(text)
     font_options = [
@@ -89,6 +93,7 @@ class ReviewCallback(CallbackData, prefix="Review"):
     index: int
     function: str
 
+@safe_callback_handler
 class ReviewFlashcard:
     button_row: list[list[InlineKeyboardButton]] = [[
         InlineKeyboardButton(text="Правильно", callback_data=ReviewCallback(index=5, function="difficulty").pack()),
@@ -100,6 +105,7 @@ class ReviewFlashcard:
                                 callback_data=ReviewCallback(index=0, function="flip").pack())
 
 
+@safe_callback_handler
 @dp.message(Command("review"))
 async def review_flashcard_handler(message: Message, state: FSMContext):
     user: User | None = None
@@ -135,6 +141,7 @@ async def review_flashcard_handler(message: Message, state: FSMContext):
     await display_question(message, state)
 
 
+@safe_callback_handler
 async def display_question(message: Message, state: FSMContext, edit_message: bool = False):
     import io
     data = await state.get_data()
@@ -154,6 +161,7 @@ async def display_question(message: Message, state: FSMContext, edit_message: bo
                                  reply_markup=InlineKeyboardMarkup(inline_keyboard=[[ReviewFlashcard.flip]]))
     await state.update_data(message_id=msg.message_id)
 
+@safe_callback_handler
 @dp.callback_query(ReviewCallback.filter(F.function == "flip"))
 async def flip_card(query: CallbackQuery, callback_data: ReviewCallback, state: FSMContext):
     st = await state.get_state()
@@ -179,6 +187,7 @@ async def flip_card(query: CallbackQuery, callback_data: ReviewCallback, state: 
         reply_markup=InlineKeyboardMarkup(inline_keyboard=ReviewFlashcard.button_row)
     ).as_(data.get("bot"))
 
+@safe_callback_handler
 @dp.callback_query(ReviewCallback.filter(F.function == "difficulty"))
 async def difficulty_callback(query: CallbackQuery, callback_data: ReviewCallback, state: FSMContext):
     st = await state.get_state()

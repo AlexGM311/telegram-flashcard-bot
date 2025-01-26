@@ -10,7 +10,7 @@ from aiogram.methods import edit_message_text
 from aiogram.types import Message, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from db_manager.main import *
-from handle_functions.dp import dp
+from handle_functions.dp import dp, safe_callback_handler
 
 from sqlalchemy.exc import NoResultFound
 
@@ -43,6 +43,7 @@ class EditFlashcard(StatesGroup):
             ]
     ])
 
+@safe_callback_handler
 @dp.message(EditFlashcard.id)
 async def select_flashcard(message: Message, state: FSMContext):
     try:
@@ -70,6 +71,7 @@ async def select_flashcard(message: Message, state: FSMContext):
         logging.error(f"Failed to retrieve flashcard from db: {e}, ")
         await message.answer(f"Что-то пошло не так! Не удалось получить флеш-карту для изменения.")
 
+@safe_callback_handler
 @dp.callback_query(EditCardCallback.filter(F.state == "edit"))
 async def edit_menu(query: CallbackQuery, callback_data: EditCardCallback, state: FSMContext):
     data = await state.get_data()
@@ -136,6 +138,7 @@ async def edit_menu(query: CallbackQuery, callback_data: EditCardCallback, state
             bot=query.bot
         )
 
+@safe_callback_handler
 @dp.message(EditFlashcard.title)
 async def edit_parameter(message: Message, state: FSMContext):
     await message.delete()
@@ -156,6 +159,7 @@ async def edit_parameter(message: Message, state: FSMContext):
         await message.answer("Что-то пошло не так! Не удалось изменить параметр")
         logging.error(e)
 
+@safe_callback_handler
 @dp.message(EditFlashcard.category)
 async def edit_parameter(message: Message, state: FSMContext):
     await message.delete()
@@ -187,6 +191,7 @@ async def edit_parameter(message: Message, state: FSMContext):
         await message.answer("Что-то пошло не так! Не удалось изменить параметр")
         logging.error(e)
 
+@safe_callback_handler
 @dp.message(EditFlashcard.question)
 async def edit_parameter(message: Message, state: FSMContext):
     await message.delete()
@@ -207,6 +212,7 @@ async def edit_parameter(message: Message, state: FSMContext):
         await message.answer("Что-то пошло не так! Не удалось изменить параметр")
         logging.error(e)
 
+@safe_callback_handler
 @dp.message(EditFlashcard.answer)
 async def edit_parameter(message: Message, state: FSMContext):
     await message.delete()

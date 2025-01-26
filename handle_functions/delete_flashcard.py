@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import *
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-from handle_functions.dp import dp
+from handle_functions.dp import dp, safe_callback_handler
 
 from db_manager.main import *
 
@@ -23,6 +23,7 @@ class DeleteFlashcard(StatesGroup):
          ]
     ])
 
+@safe_callback_handler
 async def delete_id(message: Message, state: FSMContext, edit_message: bool = False):
     data = await state.get_data()
     if not edit_message:
@@ -36,6 +37,7 @@ async def delete_id(message: Message, state: FSMContext, edit_message: bool = Fa
             reply_markup=DeleteFlashcard.markup
         )
 
+@safe_callback_handler
 @dp.callback_query(DeleteCardCallback.filter(F.delete == True))
 async def delete_flashcard(query: CallbackQuery, callback_data: DeleteCardCallback, state: FSMContext):
     data = await state.get_data()
@@ -68,6 +70,7 @@ async def delete_flashcard(query: CallbackQuery, callback_data: DeleteCardCallba
     await state.set_state(ManageState.general)
     await reset_menu(query.message, state, True)
 
+@safe_callback_handler
 @dp.callback_query(DeleteCardCallback.filter(F.delete == False))
 async def delete_flashcard(query: CallbackQuery, callback_data: DeleteCardCallback, state: FSMContext):
     await query.answer("Отмена удаления флеш-карты")

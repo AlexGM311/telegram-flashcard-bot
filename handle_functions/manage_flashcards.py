@@ -9,7 +9,7 @@ from aiogram.types import Message, InlineKeyboardButton, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.exc import NoResultFound
 
-from handle_functions.dp import dp
+from handle_functions.dp import dp, safe_callback_handler
 from db_manager.main import *
 from db_manager.models import *
 
@@ -17,7 +17,6 @@ from db_manager.models import *
 class ManageCallback(CallbackData, prefix="Manage"):
     index: int
     function: str
-
 
 class ManageState(StatesGroup):
     general = State()
@@ -53,7 +52,7 @@ class ManageState(StatesGroup):
             ]
         ])
 
-
+@safe_callback_handler
 def menu_builder(user: User, from_index: int, height: int, shared: bool) -> InlineKeyboardBuilder:
     if not shared:
         builder = InlineKeyboardBuilder()
@@ -112,6 +111,7 @@ def menu_builder(user: User, from_index: int, height: int, shared: bool) -> Inli
     builder.row(*row)
     return builder
 
+@safe_callback_handler
 @dp.message(Command("manage"))
 async def manage_handler(message: Message, state: FSMContext):
     user = None
@@ -128,6 +128,7 @@ async def manage_handler(message: Message, state: FSMContext):
     await state.set_state(ManageState.general)
     await reset_menu(message, state)
 
+@safe_callback_handler
 @dp.message(Command("manage_shared"))
 async def manage_handler(message: Message, state: FSMContext):
     user = None
@@ -144,6 +145,7 @@ async def manage_handler(message: Message, state: FSMContext):
     await state.set_state(ManageState.general)
     await reset_menu(message, state)
 
+@safe_callback_handler
 async def reset_menu(message: Message, state: FSMContext, edit_message: bool = False):
     data = await state.get_data()
     user: User = data.get("user")
@@ -162,6 +164,7 @@ async def reset_menu(message: Message, state: FSMContext, edit_message: bool = F
         )
     await state.update_data(height=height, page=0, start_index=0)
 
+@safe_callback_handler
 @dp.callback_query(ManageCallback.filter(F.function == "forward"))
 @dp.callback_query(ManageCallback.filter(F.function == "back"))
 async def change_page(query: CallbackQuery, callback_data: ManageCallback, state: FSMContext):
@@ -197,7 +200,7 @@ async def change_page(query: CallbackQuery, callback_data: ManageCallback, state
             await query.answer("Что-то пошло не так!")
             logging.error(e)
 
-
+@safe_callback_handler
 @dp.callback_query(ManageCallback.filter(F.function == "reduce"))
 @dp.callback_query(ManageCallback.filter(F.function == "expand"))
 async def resize_menu(query: CallbackQuery, callback_data: ManageCallback, state: FSMContext):
@@ -232,7 +235,7 @@ async def resize_menu(query: CallbackQuery, callback_data: ManageCallback, state
             await query.answer("Что-то пошло не так!")
             logging.error(e)
 
-
+@safe_callback_handler
 @dp.callback_query(ManageCallback.filter(F.function == "card"))
 async def select_card_callback(query: CallbackQuery, callback_data: ManageCallback, state: FSMContext):
     st = await state.get_state()
@@ -253,6 +256,7 @@ async def select_card_callback(query: CallbackQuery, callback_data: ManageCallba
         reply_markup=(ManageState.card_menu.as_markup() if not data.get("shared") else ManageState.shared_card_menu.as_markup())
     )
 
+@safe_callback_handler
 async def select_card(state: FSMContext):
     from aiogram.methods import send_message, delete_message, edit_message_text
     st = await state.get_state()
@@ -281,6 +285,7 @@ async def select_card(state: FSMContext):
     ).as_(data.get("bot"))
     await state.update_data(flashcard=flashcard)
 
+@safe_callback_handler
 @dp.callback_query(ManageCallback.filter(F.function == "return"))
 async def return_to_menu(query: CallbackQuery, callback_data: ManageCallback, state: FSMContext):
     st = await state.get_state()
@@ -300,6 +305,7 @@ async def return_to_menu(query: CallbackQuery, callback_data: ManageCallback, st
         reply_markup=builder.as_markup()
     )
 
+@safe_callback_handler
 @dp.callback_query(ManageCallback.filter(F.function == "edit"))
 async def edit_card(query: CallbackQuery, callback_data: ManageCallback, state: FSMContext):
     st = await state.get_state()
@@ -320,6 +326,7 @@ async def edit_card(query: CallbackQuery, callback_data: ManageCallback, state: 
     await state.set_state(EditFlashcard.editing)
     await edit_menu(query, EditCardCallback(state="", mode=""), state)
 
+@safe_callback_handler
 @dp.callback_query(ManageCallback.filter(F.function == "delete"))
 async def delete_card(query: CallbackQuery, callback_data: ManageCallback, state: FSMContext):
     st = await state.get_state()
@@ -339,6 +346,7 @@ async def delete_card(query: CallbackQuery, callback_data: ManageCallback, state
     await state.update_data(from_menu=True)
     await delete_id(query.message, state, True)
 
+@safe_callback_handler
 @dp.callback_query(ManageCallback.filter(F.function == "review"))
 async def review_card(query: CallbackQuery, callback_data: ManageCallback, state: FSMContext):
     st = await state.get_state()
@@ -351,6 +359,7 @@ async def review_card(query: CallbackQuery, callback_data: ManageCallback, state
     await state.update_data(from_menu=True)
     await display_question(query.message, state, True)
 
+@safe_callback_handler
 @dp.callback_query(ManageCallback.filter(F.function == "share"))
 async def share_card(query: CallbackQuery, callback_data: ManageCallback, state: FSMContext):
     st = await state.get_state()

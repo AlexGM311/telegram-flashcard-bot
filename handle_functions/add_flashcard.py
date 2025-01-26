@@ -9,6 +9,7 @@ from aiogram.types import Message, ReplyKeyboardRemove
 from sqlalchemy.exc import NoResultFound
 from db_manager.main import *
 from db_manager.models import *
+from handle_functions.dp import safe_callback_handler
 from handlers import dp
 
 
@@ -18,6 +19,7 @@ class AddFlashcard(StatesGroup):
     question = State()
     answer = State()
 
+@safe_callback_handler
 @dp.message(Command("add_flashcard"))
 async def add_flashcard_handler(message: Message, state: FSMContext) -> None:
     await state.set_state(AddFlashcard.title)
@@ -39,6 +41,7 @@ async def add_flashcard_handler(message: Message, state: FSMContext) -> None:
         from_menu = False
     )
 
+@safe_callback_handler
 @dp.message(AddFlashcard.title)
 async def process_title(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
@@ -55,6 +58,7 @@ async def process_title(message: Message, state: FSMContext) -> None:
     await message.delete()
     await state.update_data(flashcard=flashcard)
 
+@safe_callback_handler
 @dp.message(AddFlashcard.category)
 async def process_category(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
@@ -79,6 +83,7 @@ async def process_category(message: Message, state: FSMContext) -> None:
     await message.delete()
     await state.update_data(flashcard=flashcard)
 
+@safe_callback_handler
 @dp.message(AddFlashcard.question)
 async def process_question(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
@@ -96,6 +101,7 @@ async def process_question(message: Message, state: FSMContext) -> None:
     await message.delete()
     await state.update_data(flashcard=flashcard)
 
+@safe_callback_handler
 @dp.message(AddFlashcard.answer)
 async def process_answer(message: Message, state: FSMContext):
     data = await state.get_data()

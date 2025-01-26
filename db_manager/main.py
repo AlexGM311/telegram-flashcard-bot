@@ -129,3 +129,6 @@ def get_all_due() -> list[CardReview]:
 
 def get_user_card_review(user: User, flashcard: Flashcard) -> CardReview | None:
     return session.query(CardReview).filter_by(user_id=user.id, flashcard_id=flashcard.id).first()
+
+def rollback() -> None:
+    session.rollback()

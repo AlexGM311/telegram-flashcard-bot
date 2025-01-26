@@ -17,6 +17,7 @@ class NotifState(StatesGroup):
     turn_on = InlineKeyboardButton(text="**Включить** уведомления", callback_data=CbQuery(change=True).pack())
     turn_off = InlineKeyboardButton(text="**Выключить** уведомления", callback_data=CbQuery(change=True).pack())
 
+@safe_callback_handler
 @dp.message(Command("notifications"))
 async def handle_notifications(message: Message, state: FSMContext):
     user: User = get_user(message.from_user.id)
@@ -28,6 +29,7 @@ async def handle_notifications(message: Message, state: FSMContext):
     else:
         msg = await message.answer("Ваши уведомления выключены. Нажмите кнопку, чтобы включить.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[NotifState.turn_on]]))
 
+@safe_callback_handler
 @dp.callback_query(CbQuery.filter(F.change == True))
 async def notif_callback(query: CallbackQuery, callback_data: CallbackData, state: FSMContext):
     await query.answer("Настройки уведомлений изменены")
