@@ -19,15 +19,6 @@ def init():
     # Создать таблицы в базе данных
     BaseTable.metadata.create_all(engine)
 
-    # Добавить столбец notify в БД
-    with engine.connect() as connection:
-        got = set()
-        for row in connection.execute(text(f"SELECT column_name FROM information_schema.columns where table_name='Users'")):
-            got.add(row[0])
-        if 'notify' not in got:
-            connection.execute(text('ALTER TABLE public."Users" ADD COLUMN "notify" BOOLEAN DEFAULT TRUE;'))
-        connection.commit()
-
     # Создание сессии
     s = sessionmaker(engine)
     session = s()
